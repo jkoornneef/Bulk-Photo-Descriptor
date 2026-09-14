@@ -1,0 +1,1 @@
+python describe_images.py %1 --model llava:13b 
