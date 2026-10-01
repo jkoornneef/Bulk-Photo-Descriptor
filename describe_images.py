@@ -137,23 +137,36 @@ describe it as uncertain rather than guessing.
 PHOTO QUALITY TAGS
 ---
 
-Some photographs are not worth keeping. Before writing the description,
-decide whether this one is a reject.
+This is a family photo library: candid snapshots from point-and-shoot
+cameras and phones, plus some scanned film. Many are old, grainy,
+soft, dim or slightly shaky, and that is normal and perfectly fine.
+Judge the photo as a family keepsake, not as portfolio work.
 
-If the photograph is a KEEPER - reasonably sharp and containing
-something identifiable - output NO TAG AT ALL. Most photographs are
-keepers, so the normal and expected case is to begin your response
-directly with the description. Do not tag a photograph you would keep.
+Almost every photograph here is worth keeping. Only flag a photo
+that is genuinely UNUSABLE - nothing in it can be made out or
+salvaged, and nobody would want it back. Not ugly, not plain, not
+technically imperfect, and not boring.
 
-Only when you would genuinely discard this photograph, begin your
+If the photograph is a KEEPER - you can tell what it shows, even if
+the grain is heavy, the light was poor or it is not perfectly sharp -
+output NO TAG AT ALL. Most photographs are keepers, so the normal
+and expected case is to begin your response directly with the
+description. Do not tag a photograph you would keep.
+
+Only when you would genuinely throw this photograph away, begin your
 response with a tag line instead:
 
 **Blurry Photo**-<N>
     The image is out of focus, shows camera shake or motion blur, or
-    the subject is unrecognisable because of blur.
+    the subject is unrecognisable because of blur. Judge sharpness on
+    the SUBJECT - the thing the photographer was aiming at. A part of
+    the frame that is out of focus while the subject is sharp is not
+    blur and must never be tagged.
 
 **Subjectless Photo**-<N>
-    The image contains no clear, identifiable subject of focus.
+    The image contains no clear, identifiable subject of focus. Nothing
+    in the frame can be named or recognised as the thing the
+    photographer meant to capture.
 
 Include only the tags that apply. Both may apply at once.
 
@@ -176,16 +189,62 @@ Do not tag a photograph when:
 - It is sharp and something in it is identifiable, however plain the
   subject is. An empty beach, a forest, a mountainscape, a sunset, a
   cityscape, a wall or a close-up of sky are all keepers.
+- It is a candid snapshot of ordinary life - children playing outside,
+  a family around a table, a birthday cake, pets, a garden - and you
+  can make out who or what is in it. A little softness, a cloudy day,
+  wind in the hair or a face caught mid-laugh does not make it
+  unusable.
+- It looks like a film scan. Heavy grain, colour cast, low contrast,
+  a soft corner, dust specks or a slightly crooked scan are all part
+  of an old photograph, not defects. Grain is never a reason to tag.
+- It was taken in poor light or at high ISO / pushed film and is
+  noisy and dim but still readable. Noise and softness together are
+  not enough on their own - tag only if you genuinely cannot tell
+  what the photo is of.
+- Depth of field is doing its job and the subject is sharp. A soft or
+  blurred background, creamy bokeh, a wide-open aperture, a close-up
+  with the scene behind it out of focus, a blurred foreground, a
+  blurred edge of the frame, or a distant subject seen through glass
+  or foliage are all deliberate photography, not camera blur. Rate
+  the photo on the subject, never on how much of the frame is out of
+  focus. If you can describe the subject clearly, it is sharp, so it
+  is not a Blurry Photo.
 - Stars, the Milky Way, an aurora or the moon are visible and
   reasonably sharp - even when they are small and scattered across the
-  frame because the camera was hand-held. A night sky IS the subject.
-  Only tag it when the sky itself is unusable: a black frame, the lens
-  cap still being on, heavy star trailing, or so little light that
-  nothing at all can be identified.
+  frame because the camera was hand-held, or noisy and dim from a long
+  exposure. A night sky IS the subject. Only tag it when the sky
+  itself is unusable: a black frame, the lens cap still being on,
+  heavy star trailing, or so little light that nothing at all can be
+  identified.
 - The subject is small, distant, unusual, partially cropped or simply
   hard to recognise at first glance.
-- The photograph is soft but usable - a little motion blur in a
-  landscape shot is still a keeper.
+- Part of the subject is soft but the rest of it is sharp, or the
+  whole frame is a little soft, so you can still tell what it is.
+
+### DO FLAG these
+
+These are the genuine rejects - the whole image is spoiled, not just
+part of it:
+
+- The entire frame is smeared or streaked with camera shake, so that
+  everything in it is a motion "woosh" and no edge anywhere is sharp.
+- A finger, thumb or part of a hand covers part of the frame or the
+  lens, especially if the frame is black, dark or smeared behind it.
+- A shot fired by accident while the camera was being put away or
+  while the photographer was walking - typically the ground, a
+  ceiling, a car floor or a carpet filling the frame with nothing
+  recognisable in it. Tag it Subjectless, and Blurry too if it is
+  smeared.
+- The lens cap was still on, or the frame is completely black, white
+  or a single flat colour with nothing in it.
+- A zoomed or cropped detail so tight that it is an unrecognisable
+  patch of texture - a blown-out white frame, a black frame, a smear
+  of colour.
+- A night sky that is nothing but heavy star trailing, or a scene so
+  dark that no subject can be found at all.
+
+The test for all of these: could you crop or edit this photo into
+something worth keeping? If not, tag it. If yes, it is a keeper.
 
 Write the tag line first, on its own line, in exactly this form:
 

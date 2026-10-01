@@ -75,8 +75,8 @@ The two tags are independent — either, both, or neither:
 
 | Tag | Meaning |
 |---|---|
-| `**Blurry Photo**` | Out of focus, camera shake, motion blur, or the subject is unrecognisable because of blur |
-| `**Subjectless Photo**` | No clear, identifiable subject of focus |
+| `**Blurry Photo**` | The **subject** is out of focus, or the photo shows camera shake, motion blur, or the subject is unrecognisable because of blur. Sharpness is judged on the subject; a deliberately blurred background from a shallow depth of field is not blur |
+| `**Subjectless Photo**` | Nothing in the frame can be named or recognised as the thing the photographer meant to capture |
 
 The number is how sure the model is that the photo is a reject:
 
@@ -94,19 +94,52 @@ catch more.
 
 ### What is deliberately not a reject
 
-The model is told to tag a photo *only* when it would genuinely discard it,
-and to stay quiet when in doubt — a missed tag costs far less than a good
-photo being wrongly buried. Specifically:
+This is a family library — candid snapshots from point-and-shoot cameras and
+phones, plus scanned film. Much of it is old, grainy, soft or dim, and that
+is normal. The prompt therefore asks the model for photos that are genuinely
+**unusable**, not imperfect ones, and it is told to stay quiet when in doubt
+(a missed tag costs far less than a good photo being wrongly buried).
+
+The model is asked one question it must be able to answer **yes** to:
+
+> Could you crop or edit this photo into something worth keeping? If not, it is
+> a reject.
+
+Deliberately kept as keepers:
 
 - An empty landscape is still a subject. A beach, forest, mountainscape,
   sunset, cityscape or blank wall is a keeper.
+- **Candid snapshots of ordinary life.** Children playing outside on a cloudy
+  day, a family around a table, pets, a garden — if you can make out who or
+  what is in it, it is a keeper. Wind, mid-laugh faces and a little softness
+  do not make it unusable.
+- **Film scans.** Heavy grain, colour cast, low contrast, dust specks, a soft
+  corner or a crooked scan are part of an old photograph, not defects. Grain
+  is never a reason to tag.
+- **Low light or high-ISO / pushed film** that is noisy and dim but still
+  readable. Noise plus softness alone is not enough; tag only if the content
+  genuinely cannot be made out.
+- **Shallow depth of field.** A blurred background, bokeh, or a soft
+  foreground is deliberate photography. Sharpness is judged on the subject —
+  if the subject is sharp, the photo is not a `**Blurry Photo**` no matter how
+  much of the frame is out of focus.
 - A **night sky is a subject**. Stars, the Milky Way, an aurora or the moon
   that are reasonably sharp count even when small and scattered from a
   hand-held camera — this is the case that motivated the confidence score.
   A sky is only rejected when it's genuinely unusable: a black frame, the
   lens cap still on, heavy star trailing, or no identifiable light at all.
 - A small, distant, unusual or partially cropped subject is still a subject.
-- A photo that's soft but usable is a keeper.
+
+What does get flagged is a photo whose **whole** frame is spoiled:
+
+- The entire frame smeared by camera shake, with no sharp edge anywhere.
+- A thumb or finger over the lens, especially over a black or smeared frame.
+- A shot fired by accident mid-stride or while pocketing the camera — the
+  ground, a ceiling or a car floor filling the frame with nothing recognisable.
+  Tagged `**Subjectless Photo**`, plus `**Blurry Photo**` if it's smeared.
+- The lens cap still on, a fully black/white frame, or a crop so tight it is an
+  unrecognisable patch of texture.
+- A night sky that is nothing but heavy star trailing.
 
 ### Searching
 

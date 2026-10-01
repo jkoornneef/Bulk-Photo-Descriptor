@@ -1,0 +1,1 @@
+python describe_images.py %1 --find-blurry --find-subjectless --rename-tagged 
