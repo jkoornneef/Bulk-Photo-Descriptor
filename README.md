@@ -46,9 +46,271 @@ visible texts, logos, or other identifiable landmarks in the image.
 - Iterates through all images in a specified directory
 - Calls a local LLM (via Ollama) or cloud API (OpenAI-compatible) to generate image descriptions
 - Supports multiple vision models with different speed/quality tradeoffs
+- Tags photos it considers rejects as blurry and/or subjectless, with a
+  7-10 confidence; good photos get no tag
+- Find tagged photos later without calling the LLM again
+- Mark rejects in the filename so image software can sort or filter on it,
+  with a one-command undo
 - Dry-run mode to preview operations
 - Optional recursive directory processing
 - Overwrite mode to regenerate existing descriptions
+
+## Photo Quality Tags
+
+Photos the model considers a reject get a quality tag line at the very top
+of the description, giving you a searchable string for finding them:
+
+```
+**Blurry Photo**-8 **Subjectless Photo**-9
+```
+
+**Good photos get no tag at all.** The tag line appears only when the model
+judges the photograph bad enough to discard — a score of **7 or above**. Any
+lower score is treated as a keeper: the tag is stripped from the file
+entirely, so the description is written but never shows up in a
+`Subjectless Photo` search. Most photos in a normal library are keepers, so
+the default output is an untagged description.
+
+The two tags are independent — either, both, or neither:
+
+| Tag | Meaning |
+|---|---|
+| `**Blurry Photo**` | Out of focus, camera shake, motion blur, or the subject is unrecognisable because of blur |
+| `**Subjectless Photo**` | No clear, identifiable subject of focus |
+
+The number is how sure the model is that the photo is a reject:
+
+| Score | Meaning |
+|---|---|
+| `10` | Certain reject |
+| `8`–`9` | Likely reject |
+| `7` | Probably reject |
+| `1`–`6` | Keeper — tag is removed |
+
+A high score is a strong signal the photo can be reviewed last or skipped.
+The threshold is `QUALITY_TAG_MIN_SCORE` near the top of
+`describe_images.py`; raise it to 8 or 9 to be stricter, lower it to 6 to
+catch more.
+
+### What is deliberately not a reject
+
+The model is told to tag a photo *only* when it would genuinely discard it,
+and to stay quiet when in doubt — a missed tag costs far less than a good
+photo being wrongly buried. Specifically:
+
+- An empty landscape is still a subject. A beach, forest, mountainscape,
+  sunset, cityscape or blank wall is a keeper.
+- A **night sky is a subject**. Stars, the Milky Way, an aurora or the moon
+  that are reasonably sharp count even when small and scattered from a
+  hand-held camera — this is the case that motivated the confidence score.
+  A sky is only rejected when it's genuinely unusable: a black frame, the
+  lens cap still on, heavy star trailing, or no identifiable light at all.
+- A small, distant, unusual or partially cropped subject is still a subject.
+- A photo that's soft but usable is a keeper.
+
+### Searching
+
+Because tags are anchored to the first line and normalized to one exact
+format, they can be searched directly:
+
+```bash
+# every rejected photo
+grep -rl "Subjectless Photo" ~/photos
+
+# only high-confidence rejects
+grep -rl "Subjectless Photo.**-[89]" ~/photos
+grep -rl "Subjectless Photo.**-10" ~/photos
+
+# photos that got no tag at all (keepers)
+grep -rL "Photo\*\*-" ~/photos
+```
+
+Every tag is rewritten to the canonical form regardless of how the model
+originally wrote it (a tag at the bottom of the response, written as
+`Blurry Photo: 8`, or scored out of `10` all come out identical), so a search
+never misses a match because of formatting drift.
+
+Descriptions written before this feature was added have no tag line. Re-run
+with `--overwrite` to add them.
+
+### Spotting rejects while it runs
+
+When a photo is written with a quality tag, the warning is echoed on the
+console directly under the filename, so a long run can be scanned or piped
+to `grep WARNING` without opening a single file:
+
+```
+[1/4] 2013/March Vacation/IMG00023.jpg
+    Sending to model...
+    CREATED: IMG00023.txt
+    WARNING: **Blurry Photo**-8 **Subjectless Photo**-9
+[2/4] 2013/March Vacation/IMG00024.jpg
+    Sending to model...
+    CREATED: IMG00024.txt
+```
+
+Photos that are keepers print no warning line at all. The configured
+threshold is also shown in the run header:
+
+```
+Tag at    : 7+ (bad photos only)
+```
+
+To review rejects from a finished run:
+
+```bash
+python describe_images.py "D:\Photos" | grep -B2 WARNING
+```
+
+### Finding tagged photos
+
+Once descriptions exist, three switches search them for tags. These read
+only the `.txt` files — no model is loaded and no network call is made, so
+a whole library takes seconds.
+
+```bash
+# photos tagged as blurry
+python describe_images.py "D:\Photos" --find-blurry
+
+# photos tagged as subjectless
+python describe_images.py "D:\Photos" --find-subjectless
+
+# either kind, all scores
+python describe_images.py "D:\Photos" --find-blurry --find-subjectless
+```
+
+Each match prints the full path of the image, with the tags that matched:
+
+```
+D:\Photos\2013\March Vacation\IMG00023.jpg  **Blurry Photo**-8 **Subjectless Photo**-9
+D:\Photos\2014\Beach\IMG00041.jpg  **Subjectless Photo**-10
+```
+
+A photo tagged with both appears under either search. A summary follows the
+results:
+
+```
+Matched   : 2
+Tagged    : 5 total, 3 outside 9+
+Scanned   : 412 images
+```
+
+#### Reviewing in two passes
+
+The scores run 7-10, which splits naturally into two passes. Use
+`--min-confidence` with `--max-confidence` to select a band; the two bands
+below never overlap, so nothing is reviewed twice or missed between them.
+
+**Pass 1 — the obvious garbage (9-10).** These are the lens-cap-on,
+finger-over-the-lens, total-smear photos. Bulk delete them in Explorer:
+
+```bash
+python describe_images.py "D:\Photos" \
+    --find-blurry --find-subjectless --min-confidence 9
+```
+
+**Pass 2 — the borderline ones (7-8).** These are worth a human eye, and are
+where your hand-held star fields will land. Look at them one at a time and
+keep anything you'd miss:
+
+```bash
+python describe_images.py "D:\Photos" \
+    --find-blurry --find-subjectless \
+    --min-confidence 7 --max-confidence 8
+```
+
+Because each line is a bare path, pass 1 output pastes straight into an
+Explorer address bar or search box. But if you review in dedicated image
+software, it's easier to let the script mark the files for you — see
+[Marking photos with `--rename-tagged`](#marking-photos-with---rename-tagged)
+below.
+
+For pass 2, a plain list is usually easier to work through top to bottom:
+
+```bash
+python describe_images.py "D:\Photos" \
+    --find-blurry --find-subjectless \
+    --min-confidence 7 --max-confidence 8
+```
+
+Or count a band without listing it:
+
+```bash
+python describe_images.py "D:\Photos" --find-blurry | find /c /v ""
+```
+
+### Marking photos with `--rename-tagged`
+
+If your review workflow happens in image software rather than Explorer, you
+don't have to hunt the files down one by one. `--rename-tagged` marks each
+reject in its own filename, so you can point your software at the folder and
+sort or filter on the name:
+
+```bash
+# preview first - nothing is touched
+python describe_images.py "D:\Photos" \
+    --find-blurry --find-subjectless --min-confidence 9 \
+    --rename-tagged --dry-run
+
+# then for real
+python describe_images.py "D:\Photos" \
+    --find-blurry --find-subjectless --min-confidence 9 \
+    --rename-tagged
+```
+
+```
+    RENAMED: IMG00023.jpg -> IMG00023.blurry.jpg
+    RENAMED: IMG00041.jpg -> IMG00041.nosubject.jpg
+    RENAMED: IMG00052.jpg -> IMG00052.blurry.nosubject.jpg
+```
+
+Only the images are renamed — the pixels are never touched. The description
+`.txt` is renamed to match (`IMG00023.blurry.jpg` + `IMG00023.blurry.txt`), so
+the pair stays together and `--find-blurry` keeps working afterwards.
+
+A photo with both tags gets both markers. A photo matched on only one tag
+gets only that marker, even if its other tag scored higher — matching
+follows the band you asked for, not the worst score overall.
+
+**Undo** by stripping the markers back out:
+
+```bash
+python describe_images.py "D:\Photos" --revert-renames
+```
+
+```
+    REVERTED: IMG00023.blurry.jpg -> IMG00023.jpg
+```
+
+This works purely off filenames, so it needs no tag or score filter.
+
+Safety details:
+
+- **`--dry-run` works here too.** Preview any rename first and nothing on
+  disk changes.
+- **Never overwrites.** If `IMG00023.blurry.jpg` already exists, that file
+  is skipped with a message and both files are left alone.
+- **Never stacks markers.** Running twice does not produce
+  `IMG00023.blurry.blurry.jpg`; an already-marked file is skipped.
+- **Undo it as many times as you like** — a name with no marker is left
+  alone.
+
+The one risk worth knowing: if you had a photo genuinely named
+`something.nosubject.jpg` *before* running `--revert-renames`, it will also
+be renamed to `something.jpg`. Reverting cannot tell a marker it added from
+one you always had. Use `--dry-run` and read the list before reverting if
+your library has such names.
+
+Notes:
+
+- Scores below 7 never got a tag written in the first place, so
+  `--min-confidence` can only narrow within 7-10. There is nothing to find
+  below 7.
+- A photo with two tags at different scores (say `**Blurry Photo**-8
+  **Subjectless Photo**-7`) matches a band if *either* tag falls in it, so
+  the printed tag list is what tells you which band it landed in.
+- Photos with no `.txt` file yet are skipped. `Scanned : N` is the
+  denominator, so you can see how many were missed.
 
 ## Requirements
 
@@ -92,6 +354,12 @@ python describe_images.py "path/to/photos"
 | `--timeout` | Request timeout in seconds (default: 300) |
 | `--retries` | Number of attempts for failed requests (default: 3) |
 | `--overwrite` | Regenerate descriptions for images that already have a `.txt` file |
+| `--find-blurry` | Print the image paths tagged `**Blurry Photo**` |
+| `--find-subjectless` | Print the image paths tagged `**Subjectless Photo**` |
+| `--min-confidence N` | Only report tags scoring N or higher (default: 7) |
+| `--max-confidence N` | Only report tags scoring N or lower (default: 10) |
+| `--rename-tagged` | Rename matching photos to mark them (`--dry-run` supported) |
+| `--revert-renames` | Strip `.blurry` / `.nosubject` markers from filenames |
 
 ### Examples
 
