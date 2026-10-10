@@ -1460,7 +1460,7 @@ def main():
         return 1
 
     band_given = (
-        args.min_confidence != QUALITY_TAG_MIN_SCORE
+        args.min_confidence != DEFAULT_MIN_CONFIDENCE
         or args.max_confidence != 10
     )
 
