@@ -149,19 +149,23 @@ technically imperfect, and not boring.
 
 If the photograph is a KEEPER - you can tell what it shows, even if
 the grain is heavy, the light was poor or it is not perfectly sharp -
-output NO TAG AT ALL. Most photographs are keepers, so the normal
-and expected case is to begin your response directly with the
-description. Do not tag a photograph you would keep.
+output NO TAG AT ALL when there is no meaningful quality concern. Most
+photographs are keepers, so the normal and expected case is to begin your
+response directly with the description. A recognizable photo may still get
+a 5-7 tag when it has a technical defect a professional would reject.
 
-Only when you would genuinely throw this photograph away, begin your
-response with a tag line instead:
+Only when there is a real quality concern, begin your response with a tag
+line. A tag score describes how strongly the defect supports rejection; it
+does not mean every tagged photograph should be deleted by every audience.
 
 **Blurry Photo**-<N>
     The image is out of focus, shows camera shake or motion blur, or
-    the subject is unrecognisable because of blur. Judge sharpness on
-    the SUBJECT - the thing the photographer was aiming at. A part of
-    the frame that is out of focus while the subject is sharp is not
-    blur and must never be tagged.
+    the subject is unrecognisable because of blur. Judge the usefulness of
+    the whole photograph, not professional sharpness standards. A slightly
+    soft person, one person being less sharp than another, or a small soft
+    area in an otherwise clear scene is a LOW score (5 or 6), not a severe
+    reject. A part of the frame that is out of focus while the main subject
+    is clear is never an 8+ Blurry Photo.
 
 **Subjectless Photo**-<N>
     The image contains no clear, identifiable subject of focus. Nothing
@@ -170,15 +174,24 @@ response with a tag line instead:
 
 Include only the tags that apply. Both may apply at once.
 
-<N> is how sure you are that the photograph should be rejected:
+<N> is the severity of the quality problem on a 1-10 scale. Use whole
+numbers only:
 
-    10  certain reject, keep nothing
-     9  very likely reject
-     8  likely reject
-     7  probably reject
+    10  unusable; nothing useful can be made from the image
+     9  almost certainly unusable; the whole image is severely spoiled
+     8  genuinely unusable for a normal family photo library; delete by default
+     7  serious defect, but a recognizable family photo may still be kept
+     6  noticeable defect, but clearly usable as a consumer photograph
+     5  borderline softness or blur, such as this: the scene and people are
+        clear, but one person is slightly out of focus; keep for most families
+   1-4  no meaningful quality problem; keep
 
-Never write a score below 7. Anything less certain than "probably
-reject" is a keeper, and a keeper gets no tag. Use whole numbers only.
+Scores 5-7 are for borderline or professional-quality concerns, not for
+photos that are impossible to understand. Scores 8-10 require the whole
+image to fail the usefulness test below. Do not use a score below 5 for a
+quality tag; omit the tag instead. A recognizable family photo must not be
+scored above 7 merely because it would fail a professional photography
+review.
 Do not write the words "confidence", "rating" or "score" in the tag line.
 
 When in doubt, do not tag it. A missed tag costs far less than a good
@@ -218,8 +231,11 @@ Do not tag a photograph when:
   identified.
 - The subject is small, distant, unusual, partially cropped or simply
   hard to recognise at first glance.
-- Part of the subject is soft but the rest of it is sharp, or the
-  whole frame is a little soft, so you can still tell what it is.
+- Part of the subject is soft but the rest of it is sharp, or the whole
+    frame is a little soft, so you can still tell what it is. If this deserves
+    a tag at all, use 5 or 6. A wedding, family, birthday or other meaningful
+    event is especially likely to be a keeper when the people and event are
+    clear.
 
 ### DO FLAG these
 
@@ -243,8 +259,10 @@ part of it:
 - A night sky that is nothing but heavy star trailing, or a scene so
   dark that no subject can be found at all.
 
-The test for all of these: could you crop or edit this photo into
-something worth keeping? If not, tag it. If yes, it is a keeper.
+The test for an 8-10 tag is strict: could an ordinary family member identify
+the subject, event or scene and want this photo back? If yes, do not use 8,
+9 or 10. A photo may still receive 5-7 when it is recognizable but has a
+technical defect that a professional photographer would reject.
 
 Write the tag line first, on its own line, in exactly this form:
 
@@ -327,13 +345,14 @@ def _read_image_b64(image_path: Path) -> str:
 # Emitted in this order whenever more than one tag applies.
 QUALITY_TAGS = ("Blurry Photo", "Subjectless Photo")
 
-# Tags below this score are treated as "this is a keeper" and removed from
-# the description entirely. The prompt only ever asks the model for a score
-# of 7 or above, but a local model will sometimes talk itself into a low
-# score on a perfectly good photograph. Dropping those tags keeps a search
-# for "Subjectless Photo" a short list of genuine rejects rather than a
-# list that quietly grows to include keepers.
-QUALITY_TAG_MIN_SCORE = 7
+# Preserve borderline scores so a professional workflow can find them later.
+# The normal family-library search defaults to 8+ (see DEFAULT_MIN_CONFIDENCE).
+QUALITY_TAG_MIN_SCORE = 5
+
+# Scores 5-7 are useful for professional-quality review but are usually
+# acceptable in a family library. Keep them in the description without
+# making them part of the default reject list.
+DEFAULT_MIN_CONFIDENCE = 8
 
 # Score assumed when the model names a tag but omits the number. A tag is
 # named only when the photo is being rejected, so this defaults to the
@@ -1354,11 +1373,11 @@ def parse_args():
     find_group.add_argument(
         "--min-confidence",
         type=int,
-        default=QUALITY_TAG_MIN_SCORE,
+        default=DEFAULT_MIN_CONFIDENCE,
         metavar="N",
         help=(
             "Only report tags scoring N or higher, 0-10 "
-            f"(default: {QUALITY_TAG_MIN_SCORE})"
+            f"(default: {DEFAULT_MIN_CONFIDENCE})"
         ),
     )
 

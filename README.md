@@ -46,8 +46,8 @@ visible texts, logos, or other identifiable landmarks in the image.
 - Iterates through all images in a specified directory
 - Calls a local LLM (via Ollama) or cloud API (OpenAI-compatible) to generate image descriptions
 - Supports multiple vision models with different speed/quality tradeoffs
-- Tags photos it considers rejects as blurry and/or subjectless, with a
-  7-10 confidence; good photos get no tag
+- Tags photos with a blurry and/or subjectless quality concern on a 5-10
+  scale; the default reject search is 8+
 - Find tagged photos later without calling the LLM again
 - Mark rejects in the filename so image software can sort or filter on it,
   with a one-command undo
@@ -65,32 +65,34 @@ of the description, giving you a searchable string for finding them:
 ```
 
 **Good photos get no tag at all.** The tag line appears only when the model
-judges the photograph bad enough to discard — a score of **7 or above**. Any
-lower score is treated as a keeper: the tag is stripped from the file
-entirely, so the description is written but never shows up in a
-`Subjectless Photo` search. Most photos in a normal library are keepers, so
-the default output is an untagged description.
+judges the photograph as having a quality concern — a score of **5 or above**.
+The default reject search is **8+**, while scores 5-7 are retained for a
+professional-quality review. Most photos in a family library should be kept,
+so use `--min-confidence 8` for the normal deletion pass or
+`--min-confidence 5` when professional standards are wanted.
 
 The two tags are independent — either, both, or neither:
 
 | Tag | Meaning |
 |---|---|
-| `**Blurry Photo**` | The **subject** is out of focus, or the photo shows camera shake, motion blur, or the subject is unrecognisable because of blur. Sharpness is judged on the subject; a deliberately blurred background from a shallow depth of field is not blur |
+| `**Blurry Photo**` | The photo has meaningful out-of-focus, camera-shake, or motion blur. Slight softness in one person or a recognizable scene is at most a borderline 5-6; 8+ means the whole image is not useful as a family photo |
 | `**Subjectless Photo**` | Nothing in the frame can be named or recognised as the thing the photographer meant to capture |
 
 The number is how sure the model is that the photo is a reject:
 
 | Score | Meaning |
 |---|---|
-| `10` | Certain reject |
-| `8`–`9` | Likely reject |
-| `7` | Probably reject |
-| `1`–`6` | Keeper — tag is removed |
+| `10` | Unusable; nothing useful can be made |
+| `8`–`9` | Whole image is genuinely unusable; default delete/review |
+| `7` | Serious defect, but a recognizable family photo may be kept |
+| `5`–`6` | Borderline/professional concern; usually keep in a family library |
+| `1`–`4` | No meaningful quality problem; no tag |
 
 A high score is a strong signal the photo can be reviewed last or skipped.
-The threshold is `QUALITY_TAG_MIN_SCORE` near the top of
-`describe_images.py`; raise it to 8 or 9 to be stricter, lower it to 6 to
-catch more.
+The writer preserves scores from `QUALITY_TAG_MIN_SCORE` (5) upward, while
+the default search threshold is `DEFAULT_MIN_CONFIDENCE` (8) near the top of
+`describe_images.py`. Use `--min-confidence 5` for the stricter professional
+workflow.
 
 ### What is deliberately not a reject
 
@@ -230,26 +232,26 @@ Scanned   : 412 images
 
 #### Reviewing in two passes
 
-The scores run 7-10, which splits naturally into two passes. Use
+The scores run 5-10, which supports a family-library pass and a stricter
+professional pass. Use
 `--min-confidence` with `--max-confidence` to select a band; the two bands
 below never overlap, so nothing is reviewed twice or missed between them.
 
-**Pass 1 — the obvious garbage (9-10).** These are the lens-cap-on,
+**Pass 1 — the obvious garbage (8-10).** These are the lens-cap-on,
 finger-over-the-lens, total-smear photos. Bulk delete them in Explorer:
 
 ```bash
 python describe_images.py "D:\Photos" \
-    --find-blurry --find-subjectless --min-confidence 9
+    --find-blurry --find-subjectless --min-confidence 8
 ```
 
-**Pass 2 — the borderline ones (7-8).** These are worth a human eye, and are
-where your hand-held star fields will land. Look at them one at a time and
-keep anything you'd miss:
+**Professional pass — borderline concerns (5-7).** These are recognizable
+photos that a professional may reject but a family may want to keep:
 
 ```bash
 python describe_images.py "D:\Photos" \
     --find-blurry --find-subjectless \
-    --min-confidence 7 --max-confidence 8
+    --min-confidence 5 --max-confidence 7
 ```
 
 Because each line is a bare path, pass 1 output pastes straight into an
