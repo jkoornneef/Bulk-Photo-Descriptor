@@ -103,8 +103,6 @@ IMAGE_EXTENSIONS = {
     ".webp",
     ".gif",
     ".bmp",
-    ".tif",
-    ".tiff",
 }
 
 PROMPT = """Describe this photograph in detail for use in a personal
@@ -636,8 +634,6 @@ def describe_image_openai(
         "webp": "image/webp",
         "gif": "image/gif",
         "bmp": "image/bmp",
-        "tif": "image/tiff",
-        "tiff": "image/tiff",
     }.get(suffix, "image/jpeg")
 
     data_uri = f"data:{mime};base64,{image_data}"
