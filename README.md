@@ -41,11 +41,26 @@ The pool is surrounded by a fence, indicating it's a controlled area within the 
 visible texts, logos, or other identifiable landmarks in the image.
 ```
 
+The earlier example was able to name the children, Jack and Jill, because they were the only children in the photo and the LLM could substitute boy and girl for their actual names based on the context provided.  I added a face recognition module to reliably identify and name people in photos when a face database is available.
+
+Using gemma4:e4b and the face recognition module, the system can now fairly reliably identify and name individuals in photos, provided their faces have been enrolled in the face database.
+
+Below is a description from a photo of a man and 2 adult children in a lounge on a ship.
+
+```
+A family of three—Jill, Jim, and Jack—is posing for a photograph indoors. They are standing behind a low, artificial rock or stone ledge. Jill, on the left, is wearing a black top and blue jeans. Jim, in the center, is wearing a dark blue short-sleeved shirt over a lighter grey shirt and blue jeans. Jack, on the right, is wearing a royal blue t-shirt and black shorts.
+
+The setting is a modern, spacious interior lobby or atrium, characterized by a large, curved, illuminated ceiling fixture. Behind the group, the room is heavily decorated with lush, tropical foliage and large potted plants, including various types of palms and broad-leafed greenery. The background wall consists of expansive glass windows that offer a scenic view of a body of water (likely the ocean or a large bay) and distant urban buildings or resort structures. The floor is light-colored wood or tile. To the right, visible through the window and positioned in the foreground of the seating area, are several rows of uniform, light green, slatted lounge chairs or furniture groupings. A small green exit sign is visible on the wall between the foliage and the window view. The overall environment suggests a warm, tropical location with modern architectural design.
+```
+
 ## Features
 
 - Iterates through all images in a specified directory
 - Calls a local LLM (via Ollama) or cloud API (OpenAI-compatible) to generate image descriptions
 - Supports multiple vision models with different speed/quality tradeoffs
+- Face recognition: enroll family faces once with `--enroll`, then descriptions
+  use real names ("Phoebe is cooking") instead of "a woman is cooking"
+- Score face identification against a labeled test set (`evaluate_faces.py`)
 - Tags photos with a blurry and/or subjectless quality concern on a 5-10
   scale; the default reject search is 8+
 - Find tagged photos later without calling the LLM again
@@ -54,6 +69,182 @@ visible texts, logos, or other identifiable landmarks in the image.
 - Dry-run mode to preview operations
 - Optional recursive directory processing
 - Overwrite mode to regenerate existing descriptions
+
+## Face Identification
+
+### Default face database
+
+One default pair, everywhere (Python and the `.bat` wrappers alike):
+
+| Piece | Default |
+|---|---|
+| Enrollment folder convention | **`./faces/`** — one subfolder per person |
+| Database file | **`faces.pkl`**, next to `describe_images.py` |
+
+```bash
+python describe_images.py --enroll faces/    # reads ./faces/*, writes faces.pkl
+python describe_images.py "D:\Photos"        # loads faces.pkl automatically
+```
+
+Anything else is an **override**: pass your own folder and/or `--face-db`
+(e.g. `my_friends/` → `my_friends.pkl`, a school-play cast, several DBs
+merged). There is no second hidden default.
+
+Two modes, plus an override for one-off sets of faces:
+
+| Mode | When | How |
+|---|---|---|
+| **Off** | No face DB, or explicitly | `--no-face-id` (or simply never enroll) |
+| **Family** (default) | `faces.pkl` exists next to the script | one-time `--enroll faces/`, then plain describe runs |
+| **Override** | A special photo set with extra/other faces | separate `--enroll` into another `--face-db`, used only for that run |
+
+Model choice stays yours (`--model`); these modes only control face naming.
+
+### Mode 1 - no face detection
+
+```bash
+python describe_images.py "D:\Photos" --no-face-id
+```
+
+```
+Face ID   : off (no face DB, or --no-face-id)
+```
+
+### Mode 2 - family faces (default enrollment)
+
+Organize reference photos into one folder per person — 5-10 photos each,
+across different angles, lighting, years, glasses on/off. Each reference
+photo must contain **exactly one face** (multi-face photos are skipped):
+
+```
+faces/
+  Phoebe/  1.jpg 2.jpg 3.jpg ...
+  John/    ...
+```
+
+```bash
+python describe_images.py --enroll faces/
+```
+
+This writes **`faces.pkl`** next to `describe_images.py`. Every later describe
+run with no `--face-db` picks it up automatically:
+
+```
+Phoebe: 14 reference photos
+John: 7 reference photos
+Saved 21 encodings to L:\...\faces.pkl
+```
+
+### Describe with names
+
+```bash
+python describe_images.py "D:\Photos"
+```
+
+```
+Face ID   : L:\...\faces.pkl (tolerance 0.55, model hog)
+
+[1/3] party.jpg
+    Faces: John (0.13), Phoebe (0.11)
+    Sending to model...
+    CREATED: party.txt
+```
+
+### Override enrollment - temporary faces
+
+For a photo set that contains people who should **not** join the permanent
+family DB (a children's school play, a one-off party), enroll them
+separately and point that run at the extra DB:
+
+```bash
+# one-time: learn the play cast into their own file
+python describe_images.py --enroll known-play/ --face-db faces-play.pkl
+
+# describe only the play photos with the play cast
+python describe_images.py "D:\Photos\school play" --face-db faces-play.pkl
+```
+
+`--face-db` replaces the default for that run — the family DB is not
+loaded, so ordinary photos elsewhere are unaffected (they keep using
+`faces.pkl` in their own run).
+
+If the special photos also contain family members (parents in the
+audience), **merge** by passing both DBs:
+
+```bash
+python describe_images.py "D:\Photos\school play" \
+    --face-db faces.pkl --face-db faces-play.pkl
+```
+
+```
+Face ID   : L:\...\faces.pkl, L:\...\faces-play.pkl (tolerance 0.55, model hog)
+```
+
+Names from every listed DB are combined before matching. Because describe
+skips images that already have a `.txt`, you can process a special
+subdirectory first with its override, then run the whole library with the
+default family DB.
+
+For each photo, faces are detected, matched against the enrolled people,
+and the result is passed to the model as JSON with the bounding boxes and
+instructions to use those names:
+
+```json
+[
+  {"name": "John",   "x1": 324, "y1": 263, "x2": 510, "y2": 449, "distance": 0.129},
+  {"name": "Phoebe", "x1": 613, "y1": 910, "x2": 835, "y2": 1133, "distance": 0.114},
+  {"name": "unknown", "x1": 464, "y1": 390, "x2": 687, "y2": 613, "distance": 0.775}
+]
+```
+
+`distance` is the match distance — lower is more confident. Faces over the
+tolerance come back as `"unknown"` and are described generically (no
+invented names). If two faces both match the same person, only the closer
+one keeps the name.
+
+Example descriptions:
+
+| Detection | Description |
+|---|---|
+| John + Phoebe | "The upper section shows **John**... the lower section is a portrait of **Phoebe**" |
+| Phoebe + unknown | "**Phoebe** and an unknown young man are posing together..." |
+
+### Face options
+
+| Option | Description |
+|---|---|
+| `--enroll KNOWN_DIR` | Learn faces from `KNOWN_DIR/<Name>/*.jpg`, write the DB, exit |
+| `--face-db PATH` | Repeatable. Describe: omit for family default, one path to replace, several to merge. `--enroll`: at most one destination |
+| `--face-tolerance T` | Max match distance, lower = stricter (default: 0.55). Lower to ~0.5 if strangers get named; raise further only with care |
+| `--face-model hog\|cnn` | `hog` is fast (default); `cnn` is slower but finds angled/profile faces (use `--face-model cnn` for group or candid shots) |
+| `--face-upsample N` | Upsample before detection (default: 1); try 2 for small faces in high-res images |
+| `--no-face-id` | Skip face identification even when a face DB exists |
+
+If you switch `--face-model`, re-run `--enroll` with the same model.
+
+### Which vision model to use
+
+Face names only appear in the description if the vision model actually
+follows the naming instruction. Smaller models often ignore it:
+
+| Model | Uses enrolled names? |
+|---|---|
+| `gemma4:e4b`, `gemma4:12b`, `qwen3.5:latest` | Yes |
+| `llava:7b`, `llava:13b`, `qwen2.5vl:3b` | Usually no |
+
+### Requirements
+
+Face identification needs the `face_recognition` package plus `pillow` and
+`numpy` — all listed in `requirements.txt`:
+
+```bash
+python -m pip install -r requirements.txt
+# or:  pip install face_recognition pillow numpy
+```
+
+See [Installation](#installation) for dlib build issues on Windows/macOS.
+Without these packages describe runs still work — they print a warning and
+skip face naming.
 
 ## Photo Quality Tags
 
@@ -350,23 +541,60 @@ Notes:
 ## Requirements
 
 - Python 3.x
-- `requests` library
 - One of:
   - [Ollama](https://ollama.com/) for local inference (default)
   - An API key for a cloud provider with an OpenAI-compatible vision API
 
+Python packages (see `requirements.txt`):
+
+| Package | Needed for |
+|---|---|
+| `requests` | Calling Ollama or a cloud API (always) |
+| `face_recognition`, `pillow`, `numpy` | Face identification (`--enroll`, face naming) — optional; without them describe runs still work and just skip names |
+
 ## Installation
 
-Install the required Python library:
+Install the required Python libraries:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Or just the minimum for describing without faces:
 
 ```bash
 python -m pip install requests
 ```
 
+Face identification needs dlib, which is pulled in by `face_recognition`.
+If `pip install face_recognition` fails to build dlib, install it first:
+
+```bash
+# Windows / macOS - prebuilt wheel
+pip install dlib-bin
+
+# or via conda (any OS)
+conda install -c conda-forge dlib
+pip install face_recognition
+```
+
+If you see a misleading *"Please install face_recognition_models"* error on
+Python 3.12+ with setuptools ≥ 81, it is a `pkg_resources` issue: install
+`setuptools<81`, or use the patched `face_recognition_models` import that
+resolves model paths without `pkg_resources`.
+
 Install and start Ollama with a vision model:
 
 ```bash
 ollama pull llava:7b
+```
+
+For face naming, also pull a model that follows name instructions
+(`gemma4:e4b` is a good choice — see
+[Model Recommendations](#model-recommendations)):
+
+```bash
+ollama pull gemma4:e4b
 ```
 
 ## Usage
@@ -389,6 +617,12 @@ python describe_images.py "path/to/photos"
 | `--timeout` | Request timeout in seconds (default: 300) |
 | `--retries` | Number of attempts for failed requests (default: 3) |
 | `--overwrite` | Regenerate descriptions for images that already have a `.txt` file |
+| `--enroll KNOWN_DIR` | Learn faces from `KNOWN_DIR/<Name>/*.jpg` into the face DB, then exit |
+| `--face-db PATH` | Repeatable: omit for family default, one path to replace, several to merge (also the `--enroll` destination) |
+| `--face-tolerance T` | Max face match distance, lower = stricter (default: 0.55) |
+| `--face-model hog\|cnn` | Face detector: `hog` fast (default), `cnn` better for angled faces |
+| `--face-upsample N` | Upsample images before face detection (default: 1) |
+| `--no-face-id` | Skip face identification even when a face DB exists |
 | `--find-blurry` | Print the image paths tagged `**Blurry Photo**` |
 | `--find-subjectless` | Print the image paths tagged `**Subjectless Photo**` |
 | `--min-confidence N` | Only report tags scoring N or higher (default: 7) |
@@ -428,14 +662,117 @@ python describe_images.py "D:\Photos" \
     --model gpt-4o
 ```
 
+## Convenience scripts (.bat)
+
+Windows users can run these short `.bat` files instead of typing the full
+Python command. **They are only wrappers** — every script has an equivalent
+`python ...` invocation shown alongside it, which works the same on macOS
+and Linux. Face defaults are the same as plain Python: folder `./faces`,
+database `faces.pkl`.
+
+| Script | What it does |
+|---|---|
+| `processphotos.bat` | Describe a folder with the default vision model |
+| `processfaces.bat` | Build a face database (`.pkl`) from a folder of known people |
+| `processphotos_faces.bat` | Describe a folder with face names enabled |
+| `renamebadphotos.bat` | Mark rejected photos in their filenames |
+| `revertbadphotos.bat` | Strip those marks back out |
+
+### `processfaces.bat` — enroll faces
+
+```bat
+processfaces.bat                        REM .\faces  ->  faces.pkl
+processfaces.bat my_friends             REM my_friends -> my_friends.pkl
+processfaces.bat my_friends friends.pkl REM custom folder and output
+```
+
+No arguments: enroll **`.\faces`** into **`faces.pkl`** — the same defaults
+as `python describe_images.py --enroll faces/`. The output name follows the
+folder (`my_friends` → `my_friends.pkl`) unless you pass a second argument,
+so several groups can sit side by side.
+
+Equivalent on any OS:
+
+```bash
+# default: enroll ./faces into faces.pkl
+python describe_images.py --enroll faces/
+
+# named override (any name you like)
+python describe_images.py --enroll my_friends --face-db my_friends.pkl
+```
+
+### `processphotos_faces.bat` — describe with face names
+
+```bat
+processphotos_faces.bat "D:\Photos"                              REM faces.pkl
+processphotos_faces.bat "D:\Photos\school play" friends.pkl      REM override
+processphotos_faces.bat "D:\Photos\school play" faces.pkl friends.pkl  REM merge
+```
+
+Extra arguments after the photo directory are treated as face databases
+and merged. With no face DB arguments, none is passed — the run uses
+`describe_images.py`'s own default (`faces.pkl`). Model defaults to
+`gemma4:e4b` (a model that reliably follows the face-name instructions —
+see [Which vision model to use](#which-vision-model-to-use)).
+
+Equivalent on any OS:
+
+```bash
+# exactly what processphotos_faces.bat runs with no extra arguments
+python describe_images.py "path/to/photos" --model gemma4:e4b
+
+# explicit face DB (override)
+python describe_images.py "path/to/photos" --model gemma4:e4b \
+    --face-db friends.pkl
+
+# merge several face DBs
+python describe_images.py "path/to/photos" --model gemma4:e4b \
+    --face-db faces.pkl --face-db friends.pkl
+```
+
+### The other scripts
+
+```bat
+processphotos.bat "D:\Photos"
+```
+
+```bash
+python describe_images.py "path/to/photos" --model llava:13b
+```
+
+```bat
+renamebadphotos.bat "D:\Photos"
+revertbadphotos.bat "D:\Photos"
+```
+
+```bash
+python describe_images.py "path/to/photos" \
+    --find-blurry --find-subjectless --rename-tagged
+python describe_images.py "path/to/photos" --revert-renames
+```
+
 ## Model Recommendations
 
 | Model | Speed | Quality | Notes |
 |---|---|---|---|
-| `llava:7b` | ⚡ Fastest | Good | Recommended for large batches |
-| `llava:13b` | ⚡ Fast | ⚡ Excellent | Good balance |
-| `qwen2.5vl:7b` | 🐢 Slow | ⚡⚡ Best | ~2x slower than llava:13b, highest quality descriptions |
+| `llava:7b` | ⚡ Fastest | Good | Large batches **without** face naming |
+| `llava:13b` | ⚡ Fast | ⚡ Excellent | Good balance **without** face naming |
+| `gemma4:e4b` | ⚡ Fast | ⚡ Excellent | **Use with a face DB** — follows name instructions reliably |
+| `gemma4:12b` | 🐢 Slow | ⚡⚡ Best | **Use with a face DB** when quality matters more than speed |
+| `qwen3.5:latest` | 🐢 Slow | ⚡⚡ Best | **Use with a face DB** — also follows name instructions |
+| `qwen2.5vl:7b` | 🐢 Slow | ⚡⚡ Best | ~2x slower than llava:13b; **ignores face names** |
 | `qwen3-vl` | ❌ Times out | — | Not recommended for RTX 3060 (12GB) |
+
+**When a face database is loaded** (a `Face ID:` line appears in the run
+header, or a `--face-db` was passed), pick **`gemma4:e4b`** (default of
+`processphotos_faces.bat`), **`gemma4:12b`**, or **`qwen3.5:latest`**.
+The llava and qwen2.5vl models typically receive the face JSON but do not
+put the names into the description — you get "a woman" instead of "Phoebe"
+even when detection succeeded. See
+[Which vision model to use](#which-vision-model-to-use).
+
+With no face DB, any model in the table is fine; choose on speed vs.
+description quality alone.
 
 ## License
 

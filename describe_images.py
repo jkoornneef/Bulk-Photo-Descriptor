@@ -29,6 +29,28 @@ Examples:
     # Regenerate descriptions
     python describe_images.py "D:\\Photos" --overwrite
 
+Face identification - two modes plus an override:
+
+    # Mode 1: no face detection
+    python describe_images.py "D:\\Photos" --no-face-id
+
+    # Mode 2: family faces (default). One-time enrollment from ./faces:
+    python describe_images.py --enroll faces/
+    # later runs pick up faces.pkl automatically:
+    python describe_images.py "D:\\Photos"
+
+    # Override: a one-off set of faces (e.g. a school-play subdirectory)
+    # enrolled separately and used only for that run:
+    python describe_images.py --enroll my_friends/ --face-db my_friends.pkl
+    python describe_images.py "D:\\Photos\\school play" --face-db my_friends.pkl
+
+    # Or combine: family + the temporary set for that run only
+    python describe_images.py "D:\\Photos\\school play" \
+        --face-db faces.pkl --face-db my_friends.pkl
+
+    # Custom matching / detector
+    python describe_images.py "D:\\Photos" --face-tolerance 0.55 --face-model cnn
+
 Find photos that were tagged as rejects. This reads the .txt files a
 previous run already wrote. No model is loaded and no network call is
 made, so it is fast enough for a whole library.
@@ -95,6 +117,10 @@ import requests
 DEFAULT_OLLAMA_URL = "http://localhost:11434/api/chat"
 DEFAULT_OLLAMA_BASE = "http://localhost:11434"
 DEFAULT_MODEL = "llava:13b"
+
+# Face database lives next to this script so it is found no matter which
+# photo directory the tool is pointed at.
+DEFAULT_FACE_DB = Path(__file__).resolve().parent / "faces.pkl"
 
 IMAGE_EXTENSIONS = {
     ".jpg",
@@ -282,12 +308,117 @@ top, when one is warranted, is the only bold text permitted.
 
 
 # ---------------------------------------------------------------------------
+# Face identification
+# ---------------------------------------------------------------------------
+#
+# face_id.py holds the enrollment / matching logic. It is imported lazily so
+# the describer still works when face_recognition (dlib) is not installed.
+
+def _load_face_id():
+    """Import face_id helpers, returning None if the stack is unavailable."""
+    try:
+        import face_id
+        return face_id
+    except Exception as exc:
+        print(f"WARNING: face identification unavailable ({exc})")
+        return None
+
+
+def load_face_dbs(db_paths: list[Path]) -> dict | None:
+    """Load and merge one or more face DBs into {"names", "encodings"}.
+
+    Returns None when no DB could be read. Merging lets a run combine the
+    family enrollment with a temporary one (e.g. a school-play cast).
+    """
+    import pickle
+
+    names: list = []
+    encoding_batches = []
+
+    for db_path in db_paths:
+        try:
+            with open(db_path, "rb") as fh:
+                db = pickle.load(fh)
+        except Exception as exc:
+            print(f"WARNING: could not read face DB {db_path}: {exc}")
+            continue
+        names.extend(db["names"])
+        encoding_batches.append(db["encodings"])
+
+    if not names:
+        return None
+
+    import numpy as np
+    return {"names": names, "encodings": np.vstack(encoding_batches)}
+
+
+def identify_faces(
+    image_path: Path,
+    face_db: dict,
+    tolerance: float,
+    model: str = "hog",
+    upsample: int = 1,
+) -> list | None:
+    """Run face identification on one photo. None when unavailable/failed."""
+    face_id = _load_face_id()
+    if face_id is None:
+        return None
+    try:
+        results, _img = face_id.identify(
+            image_path, face_db, tolerance=tolerance,
+            model=model, upsample=upsample,
+        )
+        return results
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        print(f"    face ID failed: {exc}")
+        return None
+
+
+FACE_PROMPT_HEADER = """KNOWN PEOPLE IN THIS IMAGE (face recognition, trust these names)
+
+{faces}
+
+Use the coordinates to match each name to the correct face in the photo.
+When a face has a real name, always use that name in your description
+(for example: "Phoebe is holding Gizmo", not "a woman is holding a pet").
+When name is "unknown", describe that person generically; never invent a
+name for an unknown face.
+"""
+
+FACE_REMINDER = """
+
+REMINDER: The face-recognition names given at the start of this prompt
+must be used for those people in your description. Do not write "a man"
+or "a woman" for a face that was given a real name."""
+
+
+def format_face_section(faces: list) -> str:
+    """Render face results as JSON plus usage instructions for the model."""
+    import json
+    return FACE_PROMPT_HEADER.format(faces=json.dumps(faces, indent=2))
+
+
+# ---------------------------------------------------------------------------
 # Ollama
 # ---------------------------------------------------------------------------
 
-def _build_prompt(image_path: Path) -> str:
-    """Build the full prompt including context and path metadata."""
-    prompt = PROMPT
+def _build_prompt(image_path: Path, faces: list | None = None) -> str:
+    """Build the full prompt including context and path metadata.
+
+    Face identification, when present, goes first so a vision model is
+    less likely to bury it under the longer quality-tag instructions.
+    """
+    prompt = ""
+
+    if faces:
+        prompt += format_face_section(faces) + "\n"
+
+    prompt += PROMPT
+
+    if faces:
+        prompt += FACE_REMINDER
 
     context_dir = image_path.parent
     context_content = read_context_file(context_dir)
@@ -555,11 +686,12 @@ def describe_image_ollama(
     api_url: str,
     timeout: int,
     retries: int,
+    faces: list | None = None,
 ) -> str:
     """Send an image to Ollama and return the generated description."""
 
     image_data = _read_image_b64(image_path)
-    prompt = _build_prompt(image_path)
+    prompt = _build_prompt(image_path, faces)
 
     payload = {
         "model": model,
@@ -619,11 +751,12 @@ def describe_image_openai(
     api_key: str,
     timeout: int,
     retries: int,
+    faces: list | None = None,
 ) -> str:
     """Send an image to an OpenAI-compatible API and return the description."""
 
     image_data = _read_image_b64(image_path)
-    prompt = _build_prompt(image_path)
+    prompt = _build_prompt(image_path, faces)
 
     # Build the data URI (OpenAI expects this format).
     suffix = image_path.suffix.lower().lstrip(".")
@@ -710,14 +843,15 @@ def describe_image(
     api_key: str | None,
     timeout: int,
     retries: int,
+    faces: list | None = None,
 ) -> str:
     """Route to Ollama or OpenAI-compatible backend."""
     if api_key:
         return describe_image_openai(
-            image_path, model, api_url, api_key, timeout, retries,
+            image_path, model, api_url, api_key, timeout, retries, faces,
         )
     return describe_image_ollama(
-        image_path, model, api_url, timeout, retries,
+        image_path, model, api_url, timeout, retries, faces,
     )
 
 def unload_model(model: str, ollama_base_url: str):
@@ -764,6 +898,32 @@ def read_context_file(directory):
 # Main processing
 # ---------------------------------------------------------------------------
 
+def resolve_face_dbs(args) -> list[Path] | None:
+    """Face DBs to load for this run, or None to skip face ID.
+
+    No --face-db given: use the default family DB (faces.pkl), and stay
+    off when it does not exist. --face-db given: use exactly those paths
+    (repeatable), replacing the default — or add the family DB explicitly
+    to combine them.
+    """
+    if getattr(args, "no_face_id", False):
+        return None
+
+    raw = getattr(args, "face_db", None)
+    if raw is None:
+        default = Path(DEFAULT_FACE_DB)
+        return [default] if default.exists() else None
+
+    candidates = [Path(p).expanduser() for p in raw]
+    existing = []
+    for path in candidates:
+        if path.exists():
+            existing.append(path)
+        else:
+            print(f"WARNING: face DB not found: {path}")
+    return existing or None
+
+
 def process_images(args):
     root = Path(args.directory).expanduser().resolve()
 
@@ -783,6 +943,14 @@ def process_images(args):
         print("No images found.")
         return 0
 
+    # Resolve (and load) even for a dry run so the header shows which
+    # face mode is configured; only identification itself is skipped.
+    face_db_paths = resolve_face_dbs(args)
+    face_db = load_face_dbs(face_db_paths) if face_db_paths else None
+    face_tolerance = args.face_tolerance
+    face_model = getattr(args, "face_model", "hog")
+    face_upsample = getattr(args, "face_upsample", 1)
+
     backend = "OpenAI" if args.api_key else "Ollama"
     print()
     print("Photo Description Utility")
@@ -794,11 +962,21 @@ def process_images(args):
     print(f"API URL   : {args.api_url}")
     print(f"Images    : {len(images)}")
     print(f"Tag at    : {QUALITY_TAG_MIN_SCORE}+ (bad photos only)")
+    if face_db is not None:
+        dbs = ", ".join(str(p) for p in face_db_paths)
+        suffix = " (not run in dry-run)" if args.dry_run else ""
+        print(
+            f"Face ID   : {dbs} "
+            f"(tolerance {face_tolerance}, model {face_model}){suffix}"
+        )
+    else:
+        print("Face ID   : off (no face DB, or --no-face-id)")
     print()
 
     processed = 0
     skipped = 0
     failed = 0
+    named_faces = 0
 
     for index, image_path in enumerate(images, start=1):
 
@@ -831,6 +1009,26 @@ def process_images(args):
             continue
 
         # ---------------------------------------------------------------
+        # Face identification
+        # ---------------------------------------------------------------
+
+        faces = None
+        if face_db is not None:
+            faces = identify_faces(
+                image_path, face_db, face_tolerance,
+                model=face_model, upsample=face_upsample,
+            )
+            if faces:
+                people = ", ".join(
+                    f"{f['name']} ({f['distance']:.2f})"
+                    for f in faces
+                )
+                print(f"    Faces: {people}")
+                named_faces += sum(1 for f in faces if f["name"] != "unknown")
+            else:
+                print("    Faces: none detected")
+
+        # ---------------------------------------------------------------
         # Generate description
         # ---------------------------------------------------------------
 
@@ -844,6 +1042,7 @@ def process_images(args):
                 api_key=args.api_key,
                 timeout=args.timeout,
                 retries=args.retries,
+                faces=faces,
             )
 
             # Anchor any quality tags to the top of the file in a
@@ -897,6 +1096,8 @@ def process_images(args):
     print(f"Processed : {processed}")
     print(f"Skipped   : {skipped}")
     print(f"Failed    : {failed}")
+    if face_db is not None:
+        print(f"Named faces: {named_faces}")
 
     return 1 if failed else 0
 
@@ -1268,6 +1469,56 @@ def revert_renamed_images(args):
 # Command line
 # ---------------------------------------------------------------------------
 
+def enroll_faces(args) -> int:
+    """Learn faces from faces/<Name>/*.jpg into the face database."""
+    known_dir = Path(args.enroll).expanduser().resolve()
+    if not known_dir.is_dir():
+        print(f"ERROR: Enroll directory does not exist:")
+        print(f"  {known_dir}")
+        return 1
+
+    if not any(p.is_dir() for p in known_dir.iterdir()):
+        print(f"ERROR: No person subdirectories in:")
+        print(f"  {known_dir}")
+        print("Expected layout: faces/Phoebe/*.jpg, faces/John/*.jpg, ...")
+        print("(each subfolder name becomes a person)")
+        return 1
+
+    face_id = _load_face_id()
+    if face_id is None:
+        print("ERROR: face_recognition is required for enrollment.")
+        print("Install with:  pip install face_recognition pillow numpy")
+        return 1
+
+    db_paths = args.face_db or [str(DEFAULT_FACE_DB)]
+    if len(db_paths) > 1:
+        print("ERROR: --enroll writes a single database.")
+        print("Pass at most one --face-db (omit it to use the default faces.pkl).")
+        return 1
+    db_path = Path(db_paths[0]).expanduser()
+    print()
+    print("Face Enrollment")
+    print("===============")
+    print(f"Known dir : {known_dir}")
+    print(f"Database  : {db_path}")
+    print()
+
+    try:
+        face_id.enroll(known_dir, db_path)
+    except SystemExit as exc:
+        # face_id.enroll exits with a message when nothing usable was found.
+        if exc.code not in (0, None):
+            print(f"ERROR: enrollment failed ({exc})")
+            return 1
+    except Exception as exc:
+        print(f"ERROR: enrollment failed: {exc}")
+        return 1
+
+    print()
+    print("Done. Describe runs will now use this database for face names.")
+    return 0
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -1278,7 +1529,73 @@ def parse_args():
 
     parser.add_argument(
         "directory",
+        nargs="?",
         help="Directory containing photographs",
+    )
+
+    face_group = parser.add_argument_group(
+        "face identification",
+        "Two modes: off (--no-face-id, or no face DB present), or "
+        "on (face DB present - default faces.pkl 'family' enrollment). "
+        "Override or combine DBs with --face-db. Requires face_recognition.",
+    )
+
+    face_group.add_argument(
+        "--enroll",
+        metavar="KNOWN_DIR",
+        help=(
+            "Learn faces from KNOWN_DIR/<Name>/*.jpg and write the face "
+            "database, then exit. Each subfolder name becomes a person."
+        ),
+    )
+
+    face_group.add_argument(
+        "--face-db",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Face database path, repeatable. Describe runs: omit for the "
+            f"default family DB ({DEFAULT_FACE_DB.name}); give one to "
+            "replace it; give several to merge them (e.g. family + a "
+            "temporary school-play cast). --enroll: at most one, the "
+            "destination to write."
+        ),
+    )
+
+    face_group.add_argument(
+        "--face-tolerance",
+        type=float,
+        default=0.55,
+        metavar="T",
+        help=(
+            "Max distance to accept a face match (lower = stricter). "
+            "default 0.55"
+        ),
+    )
+
+    face_group.add_argument(
+        "--face-model",
+        choices=["hog", "cnn"],
+        default="hog",
+        help=(
+            "Face detector: hog is fast (default); cnn is slower but "
+            "finds angled/profile faces better"
+        ),
+    )
+
+    face_group.add_argument(
+        "--face-upsample",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Upsample images before face detection (default: 1)",
+    )
+
+    face_group.add_argument(
+        "--no-face-id",
+        action="store_true",
+        help="Skip face identification even when a face database exists",
     )
 
     parser.add_argument(
@@ -1409,6 +1726,14 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # --enroll is its own mode: learn faces, write the DB, stop.
+    if args.enroll:
+        return enroll_faces(args)
+
+    if not args.directory:
+        print("ERROR: a photo directory is required unless --enroll is used.")
+        return 1
 
     tag_selection = args.find_blurry or args.find_subjectless
 
