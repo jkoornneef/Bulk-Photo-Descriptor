@@ -1,6 +1,6 @@
 # Bulk-Photo-Descriptor
 
-A simple Python script that batch processes images in a directory, using an LLM to generate descriptions for each image.
+Started as a simple Python script that batch processes images in a directory, using an LLM to generate descriptions for each image. Now includes a face recognition module to reliably identify and name people in photos when a face database is available.
 
 Supports both local inference via [Ollama](https://ollama.com/) and cloud vision APIs with an OpenAI-compatible interface (OpenAI, OpenRouter, vLLM, etc.). By default it runs locally with Ollama for full privacy.
 
@@ -48,9 +48,20 @@ Using gemma4:e4b and the face recognition module, the system can now fairly reli
 Below is a description from a photo of a man and 2 adult children in a lounge on a ship.
 
 ```
-A family of three—Jill, Jim, and Jack—is posing for a photograph indoors. They are standing behind a low, artificial rock or stone ledge. Jill, on the left, is wearing a black top and blue jeans. Jim, in the center, is wearing a dark blue short-sleeved shirt over a lighter grey shirt and blue jeans. Jack, on the right, is wearing a royal blue t-shirt and black shorts.
+A family of three—Jill, Jim, and Jack—is posing for a photograph indoors. They are standing behind a 
+low, artificial rock or stone ledge. Jill, on the left, is wearing a black top and blue jeans. Jim, 
+in the center, is wearing a dark blue short-sleeved shirt over a lighter grey shirt and blue jeans. 
+Jack, on the right, is wearing a royal blue t-shirt and black shorts.
 
-The setting is a modern, spacious interior lobby or atrium, characterized by a large, curved, illuminated ceiling fixture. Behind the group, the room is heavily decorated with lush, tropical foliage and large potted plants, including various types of palms and broad-leafed greenery. The background wall consists of expansive glass windows that offer a scenic view of a body of water (likely the ocean or a large bay) and distant urban buildings or resort structures. The floor is light-colored wood or tile. To the right, visible through the window and positioned in the foreground of the seating area, are several rows of uniform, light green, slatted lounge chairs or furniture groupings. A small green exit sign is visible on the wall between the foliage and the window view. The overall environment suggests a warm, tropical location with modern architectural design.
+The setting is a modern, spacious interior lobby or atrium, characterized by a large, curved, 
+illuminated ceiling fixture. Behind the group, the room is heavily decorated with lush, tropical foliage 
+and large potted plants, including various types of palms and broad-leafed greenery. The background wall 
+consists of expansive glass windows that offer a scenic view of a body of water (likely the ocean or a 
+large bay) and distant urban buildings or resort structures. The floor is light-colored wood or tile. 
+To the right, visible through the window and positioned in the foreground of the seating area, are 
+several rows of uniform, light green, slatted lounge chairs or furniture groupings. A small green exit 
+sign is visible on the wall between the foliage and the window view. The overall environment suggests a 
+warm, tropical location with modern architectural design.
 ```
 
 ## Features
